@@ -13,14 +13,11 @@ This project demonstrates an agentic approach to medical coding exams. Rather th
 │                           AGENT LOOP                                │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│   Question ──► Agent (Claude Sonnet 4.5)                            │
+│   Question ──► Agent (Gemini Flash)                                 │
 │                    │                                                │
 │                    ├──► Tool: lookup_codes(["99213", "I10"])        │
 │                    │    └──► RAG: Query medical code database       │
 │                    │         └──► Returns: Code descriptions        │
-│                    │                                                │
-│                    ├──► Tool: web_search("CPT 99213")               │
-│                    │    └──► Fallback for codes not in database     │
 │                    │                                                │
 │                    ├──► Agent reasons about codes vs question       │
 │                    │                                                │
@@ -35,7 +32,6 @@ This project demonstrates an agentic approach to medical coding exams. Rather th
 | Tool | Description | Input | Output |
 |------|-------------|-------|--------|
 | `lookup_codes` | Query the medical code database (CPT, ICD-10, HCPCS) | List of codes | Code descriptions |
-| `web_search` | Search for codes not in database | Search query | Code information |
 | `submit_answer` | Submit final answer with reasoning | Option + reasoning | Structured answer |
 
 ## Data Sources
@@ -50,7 +46,7 @@ This project demonstrates an agentic approach to medical coding exams. Rather th
 ### Prerequisites
 
 - Python 3.10+
-- Anthropic API key
+- Gemini API key
 
 ### Installation
 
@@ -63,7 +59,7 @@ cd medical-code-test-taker
 pip install -r requirements.txt
 
 # Set up environment variables
-echo "ANTHROPIC_API_KEY=your-key-here" > .env
+echo "GEMINI_API_KEY=your-key-here" > .env
 ```
 
 ### Setting Up Medical Code Data
@@ -136,13 +132,16 @@ Instead of embedding all code descriptions in the prompt, the agent actively que
 - Allows the agent to look up additional codes as needed
 - Demonstrates true agentic behavior
 
+The agent also computes per-option match scores from retrieved descriptions and only invokes the LLM when needed.
+It applies a rule filter (procedure/site matching) before the LLM, and can auto-answer when only one option remains.
+If exactly one option has a non-zero description match, it is treated as dominant and can override LLM picks; a small set of keyword rules handles under-specified anatomy.
+
 ### 2. RAG for Medical Codes
 
 Medical codes are stored in a SQLite database with multiple lookup strategies:
 1. Exact code match
 2. Code prefix matching (for ICD-10 hierarchies)
 3. Supplementary JSON file for common exam codes
-4. AAPC web fallback (when enabled)
 
 ### 3. Concurrent Processing
 
@@ -167,9 +166,33 @@ Environment variables (set in `.env`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key | Required |
-| `AAPC_LOOKUP` | Enable AAPC web scraping | `false` |
+| `GEMINI_API_KEY` | Gemini API key | Required |
+| `GOOGLE_API_KEY` | Gemini API key alias | Optional |
+| `GEMINI_MODEL` | Gemini model name | `gemini-1.5-flash` |
+| `GEMINI_BASE_URL` | Gemini OpenAI-compatible base URL | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `LLM_MAX_RETRIES` | Max retry attempts | `3` |
+| `LLM_RETRY_BASE_SECONDS` | Base retry delay | `1` |
+| `LLM_RETRY_MAX_SECONDS` | Max retry delay | `8` |
 | `MEDICAL_CODES_DIR` | Custom codes directory | `./codes` |
+| `HEURISTIC_ENABLED` | Enable heuristic auto-answering | `true` |
+| `HEURISTIC_MIN_SCORE` | Minimum heuristic score to auto-answer | `0.35` |
+| `HEURISTIC_MIN_GAP` | Minimum score gap vs runner-up | `0.15` |
+| `HEURISTIC_MIN_OPTIONS` | Minimum options with known descriptions | `3` |
+| `HEURISTIC_DOMINANT_MIN_SCORE` | Minimum score when the top option is the only non-zero match | `0.08` |
+| `EVIDENCE_ENABLED` | Add per-option evidence pack to prompt | `true` |
+| `EVIDENCE_MAX_DESC_LEN` | Truncate code descriptions in evidence pack | `200` |
+| `SECOND_PASS_ENABLED` | Enable second-pass re-evaluation | `true` |
+| `SECOND_PASS_MIN_LLM_CONF` | LLM confidence threshold to trigger second pass | `0.55` |
+| `SECOND_PASS_MIN_HEURISTIC_SCORE` | Heuristic score needed for second pass | `0.5` |
+| `SECOND_PASS_MIN_HEURISTIC_GAP` | Heuristic gap needed for second pass | `0.15` |
+| `SECOND_PASS_MIN_OPTIONS` | Minimum options with known descriptions | `3` |
+| `DISAGREE_SECOND_PASS` | Trigger second pass on rule/heuristic disagreement | `true` |
+| `RULE_FILTER_ENABLED` | Enable rule-based filtering before LLM | `true` |
+| `RULE_FALLBACK_ENABLED` | Enable fallback rule when no procedure matches | `true` |
+| `RULE_FALLBACK_AUTO` | Auto-answer using fallback rule | `true` |
+| `KEYWORD_RULES_ENABLED` | Enable keyword-based disambiguation rules | `true` |
+| `TRACE_ENABLED` | Include tool trace in results JSON | `true` |
+| `TRACE_SCORE_PRECISION` | Decimal precision for trace scores | `3` |
 
 ## License
 

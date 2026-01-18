@@ -1,92 +1,125 @@
-import fitz
+"""
+PDF Ingestion for Medical Coding Exams
+
+Extracts multiple-choice questions from PDF exam files.
+"""
+
 import re
-from typing import List
+import fitz  # PyMuPDF
+
 from src.models import Question
 
-def extract_questions_from_pdf(pdf_path: str) -> List[Question]:
+
+def extract_questions_from_pdf(pdf_path: str) -> list[Question]:
     """
-    Extracts questions and options from the practice test PDF.
+    Extract questions and options from a medical coding exam PDF.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        List of Question objects with id, text, and options
     """
     doc = fitz.open(pdf_path)
-    full_text = ""
-    
-    # Skip intro pages (0 and 1) and maybe page 2 (timer)
-    # Based on analysis, questions start on Page 4 (index 3)
-    # But let's just process all pages and filter out non-questions later or rely on the regex
-    
-    for page in doc:
-        text = page.get_text("text")
-        full_text += text + "\n"
-        
-    # Remove headers/footers
-    full_text = full_text.replace("Medical Coding Ace", "")
-    full_text = full_text.replace("TIMER START", "")
-    full_text = full_text.replace("4 HOURS", "")
-    
-    lines = full_text.split('\n')
+    full_text = "\n".join(_extract_page_text(page) for page in doc)
+
+    # Remove common headers/footers
+    for noise in ["Medical Coding Ace", "TIMER START", "4 HOURS"]:
+        full_text = full_text.replace(noise, "")
+
+    return _parse_questions(full_text)
+
+
+def _extract_page_text(page: fitz.Page) -> str:
+    """Extract page text with basic multi-column handling."""
+    try:
+        blocks = page.get_text("blocks")
+    except Exception:
+        return page.get_text("text")
+
+    text_blocks = [b for b in blocks if str(b[4]).strip()]
+    if not text_blocks:
+        return page.get_text("text")
+
+    page_width = page.rect.width
+    mid_x = page_width / 2
+
+    left_blocks = [b for b in text_blocks if b[0] < mid_x]
+    right_blocks = [b for b in text_blocks if b[0] >= mid_x]
+
+    def block_key(block: tuple) -> tuple:
+        return (block[1], block[0])
+
+    if left_blocks and right_blocks:
+        left_max = max(b[2] for b in left_blocks)
+        right_min = min(b[0] for b in right_blocks)
+        gap = right_min - left_max
+        if gap > page_width * 0.05:
+            ordered = sorted(left_blocks, key=block_key) + sorted(right_blocks, key=block_key)
+        else:
+            ordered = sorted(text_blocks, key=block_key)
+    else:
+        ordered = sorted(text_blocks, key=block_key)
+
+    lines = []
+    for block in ordered:
+        block_text = str(block[4]).strip()
+        if not block_text:
+            continue
+        block_text = re.sub(r"[ \t]+", " ", block_text)
+        lines.append(block_text)
+
+    return "\n".join(lines)
+
+
+def _parse_questions(text: str) -> list[Question]:
+    """Parse question text into Question objects."""
     questions = []
-    
-    current_q_id = None
-    current_q_text = []
+    current_id = None
+    current_text = []
     current_options = {}
-    
-    # Regex for Question start: "1. ", "100. "
-    q_start_pattern = re.compile(r'^(\d+)\.\s+(.*)')
-    # Regex for Option: "A. ", "B. "
-    opt_pattern = re.compile(r'^([A-D])\.\s+(.*)')
-    
-    for line in lines:
+
+    q_pattern = re.compile(r"^(\d+)\.\s+(.*)")
+    opt_pattern = re.compile(r"^([A-D])\.\s+(.*)")
+
+    for line in text.split("\n"):
         line = line.strip()
         if not line:
             continue
-            
-        q_match = q_start_pattern.match(line)
+
+        q_match = q_pattern.match(line)
         opt_match = opt_pattern.match(line)
-        
+
         if q_match:
-            # New question found. Save previous if exists.
-            if current_q_id is not None:
-                # Assuming we have valid options.
+            # Save previous question
+            if current_id is not None:
                 questions.append(Question(
-                    id=current_q_id,
-                    text=" ".join(current_q_text).strip(),
+                    id=current_id,
+                    text=" ".join(current_text).strip(),
                     options=current_options
                 ))
-            
-            current_q_id = int(q_match.group(1))
-            current_q_text = [q_match.group(2)]
+            # Start new question
+            current_id = int(q_match.group(1))
+            current_text = [q_match.group(2)]
             current_options = {}
-            
+
         elif opt_match:
-            # Found an option
-            opt_label = opt_match.group(1)
-            opt_text = opt_match.group(2)
-            current_options[opt_label] = opt_text
-            
-        else:
-            # Continuation of text
-            # Depending on state, append to question or the last option
+            current_options[opt_match.group(1)] = opt_match.group(2)
+
+        elif current_id is not None:
+            # Continuation text
             if current_options:
-                # Append to last option
                 last_key = sorted(current_options.keys())[-1]
                 current_options[last_key] += " " + line
-            elif current_q_id is not None:
-                # Append to question text
-                current_q_text.append(line)
-    
-    # Add the last question
-    if current_q_id is not None:
+            else:
+                current_text.append(line)
+
+    # Don't forget the last question
+    if current_id is not None:
         questions.append(Question(
-            id=current_q_id,
-            text=" ".join(current_q_text).strip(),
+            id=current_id,
+            text=" ".join(current_text).strip(),
             options=current_options
         ))
-        
-    return questions
 
-if __name__ == "__main__":
-    qs = extract_questions_from_pdf("practice_test_no_answers.pdf")
-    print(f"Extracted {len(qs)} questions.")
-    print(qs[0].to_string())
-    print("-" * 20)
-    print(qs[-1].to_string())
+    return questions
