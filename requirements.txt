@@ -1,0 +1,8 @@
+pymupdf
+chromadb
+pydantic-ai
+pydantic
+openai
+tiktoken
+python-dotenv
+duckduckgo-search

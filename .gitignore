@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+*.csv
+*.json
+!requirements.txt
+
+# Medical code data (copyrighted - not for distribution)
+codes/
+
+# Test outputs
+*_results.json
+*_answers.csv
