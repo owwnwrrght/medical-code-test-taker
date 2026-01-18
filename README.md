@@ -56,8 +56,8 @@ This project demonstrates an agentic approach to medical coding exams. Rather th
 
 ```bash
 # Clone the repository
-git clone <repo-url>
-cd Medical-Exam-Pro
+git clone https://github.com/owwnwrrght/medical-code-test-taker.git
+cd medical-code-test-taker
 
 # Install dependencies
 pip install -r requirements.txt
